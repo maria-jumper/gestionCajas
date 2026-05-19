@@ -1,18 +1,27 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
-const mongoose = require('mongoose');
+const mysql = require('mysql2/promise');
 
-const conectarDB = async () => {
-    try {
-        // Usamos directamente la URI completa que ya tiene el usuario y contraseña correctos
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log('✅ Conexión a MongoDB Atlas establecida correctamente.');
-    } catch (error) {
-        console.error('❌ Error fatal: No se pudo conectar a MongoDB.');
-        console.error(error.message);
-        process.exit(1);
-    }
-};
+const pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT || 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
 
-conectarDB();
+(async () => {
+    try {
+        const connection = await pool.getConnection();
+        console.log('Conexion a Mysql (Pool) establecida correctamente.');
+        connection.release();
+    } catch (error) {
+        console.error('Error fatal: No se pudo conectar a la base de datos.');
+        console.error(error.message);
+        process.exit(1);
+    }
+})();
 
-module.exports = mongoose.connection;
+module.exports = pool;
