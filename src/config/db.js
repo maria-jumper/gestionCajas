@@ -1,4 +1,4 @@
-const mysql = require('mysql2'); // o 'mysql' según la librería que uses
+const mysql = require('mysql2/promise');
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
