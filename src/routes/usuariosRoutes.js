@@ -1,18 +1,13 @@
-const express    = require('express');
-const router     = express.Router();
-const controller = require('../controllers/usuariosController');
-
-// Usa el mismo middleware que el resto de tu proyecto
+const express = require('express');
+const router  = express.Router();
+const ctrl    = require('../controllers/usuariosController');
 const { verifyToken } = require('../middlewares/authMiddleware');
 const { checkRole }   = require('../middlewares/roleMiddleware');
 
-// GET    /api/usuarios      → lista todos
-router.get('/',     verifyToken, checkRole('admin'), controller.getAll);
-
-// POST   /api/usuarios      → crea uno nuevo
-router.post('/',    verifyToken, checkRole('admin'), controller.create);
-
-// DELETE /api/usuarios/:id  → elimina por id
-router.delete('/:id', verifyToken, checkRole('admin'), controller.remove);
+router.get('/',      verifyToken, checkRole('admin'), ctrl.getAll);
+router.get('/:id',   verifyToken, ctrl.getById);          // secretaria puede ver su propio perfil
+router.post('/',     verifyToken, checkRole('admin'), ctrl.create);
+router.put('/:id',   verifyToken, ctrl.update);            // admin edita cualquiera, secretaria solo a sí misma
+router.delete('/:id',verifyToken, checkRole('admin'), ctrl.remove);
 
 module.exports = router;
