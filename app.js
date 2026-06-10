@@ -12,16 +12,18 @@ const envioRoutes      = require('./src/routes/enviosRoutes');
 const entregaRoutes    = require('./src/routes/entregasRoutes');
 const gastosRoutes     = require('./src/routes/gastosRoutes');
 const movimientoRoutes = require('./src/routes/movimientosRoutes');
-const informesRoutes   = require('./src/routes/informesRoutes');  // NUEVO
+const informesRoutes   = require('./src/routes/informesRoutes');
 
 const { errorHandler } = require('./src/middlewares/errorMiddleware');
 
 const app = express();
 
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(helmet());
 app.use(cors());
 app.use(morgan('dev'));
-app.use(express.json());
+// ← el express.json() duplicado se eliminó
 
 app.use('/api/auth',        authRoutes);
 app.use('/api/usuarios',    usuariosRoutes);
@@ -30,7 +32,7 @@ app.use('/api/movimientos', movimientoRoutes);
 app.use('/api/gastos',      gastosRoutes);
 app.use('/api/envios',      envioRoutes);
 app.use('/api/inventario',  inventarioRoutes);
-app.use('/api/informes',    informesRoutes);   // NUEVO
+app.use('/api/informes',    informesRoutes);
 
 app.use(errorHandler);
 
