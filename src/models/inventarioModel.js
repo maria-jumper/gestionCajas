@@ -5,14 +5,11 @@ function normalizarFecha(fecha) {
   if (!fecha) return new Date().toISOString().split('T')[0];
   const s = String(fecha).trim();
   if (!s) return new Date().toISOString().split('T')[0];
-  // Ya está en YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // DD/MM/YYYY o D/M/YYYY (formato colombiano)
   if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
     const [d, m, y] = s.split('/');
     return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
   }
-  // Intentar con Date nativo
   try {
     const d = new Date(s);
     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
@@ -55,50 +52,50 @@ class Inventario {
   static async importar(guias) {
     const conn = await db.getConnection();
     try {
-      await conn.beginTransaction();
+      const BATCH = 100;
       let insertadas = 0, actualizadas = 0;
 
-      for (const g of guias) {
-        if (!g.guia) continue;
-        const fechaDB = normalizarFecha(g.fecha);
-        const valor   = parseFloat(String(g.valor || '0').replace(/[^0-9.]/g, '')) || 0;
+      for (let i = 0; i < guias.length; i += BATCH) {
+        const lote = guias.slice(i, i + BATCH).filter(g => g.guia);
+        if (!lote.length) continue;
 
-        const [existe] = await conn.query('SELECT id FROM inventario WHERE guia = ?', [String(g.guia).trim()]);
+        const valores = lote.map(g => [
+          String(g.guia).trim(),
+          g.cliente        || null,
+          g.destinatario   || null,
+          g.direccion      || null,
+          g.telefono       || null,
+          parseFloat(String(g.valor || '0').replace(/[^0-9.]/g, '')) || 0,
+          g.ciudad         || null,
+          g.observaciones  || null,
+          normalizarFecha(g.fecha),
+        ]);
 
-        if (existe.length) {
-          await conn.query(
-            `UPDATE inventario SET
-              cliente       = COALESCE(?, cliente),
-              destinatario  = COALESCE(?, destinatario),
-              direccion     = COALESCE(?, direccion),
-              telefono      = COALESCE(?, telefono),
-              valor         = COALESCE(?, valor),
-              ciudad        = COALESCE(?, ciudad),
-              observaciones = COALESCE(?, observaciones),
-              fecha         = ?
-             WHERE guia = ?`,
-            [g.cliente||null, g.destinatario||null, g.direccion||null,
-             g.telefono||null, valor||null, g.ciudad||null,
-             g.observaciones||null, fechaDB, String(g.guia).trim()]
-          );
-          actualizadas++;
-        } else {
-          await conn.query(
-            `INSERT INTO inventario (guia, cliente, destinatario, direccion, telefono, valor, ciudad, observaciones, estado, fecha)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'No entregado', ?)`,
-            [String(g.guia).trim(), g.cliente||null, g.destinatario||null,
-             g.direccion||null, g.telefono||null, valor,
-             g.ciudad||null, g.observaciones||null, fechaDB]
-          );
-          insertadas++;
-        }
+        const placeholders = lote.map(() => "(?,?,?,?,?,?,?,?,?,'No entregado')").join(',');
+
+        const [result] = await conn.query(
+          `INSERT INTO inventario
+             (guia, cliente, destinatario, direccion, telefono, valor, ciudad, observaciones, fecha, estado)
+           VALUES ${placeholders}
+           ON DUPLICATE KEY UPDATE
+             cliente       = COALESCE(VALUES(cliente),       cliente),
+             destinatario  = COALESCE(VALUES(destinatario),  destinatario),
+             direccion     = COALESCE(VALUES(direccion),     direccion),
+             telefono      = COALESCE(VALUES(telefono),      telefono),
+             valor         = COALESCE(VALUES(valor),         valor),
+             ciudad        = COALESCE(VALUES(ciudad),        ciudad),
+             observaciones = COALESCE(VALUES(observaciones), observaciones),
+             fecha         = VALUES(fecha)`,
+          valores.flat()
+        );
+
+        // En MySQL: affectedRows = 1 por insert nuevo, 2 por update
+        const upd = result.affectedRows - lote.length;
+        actualizadas += upd;
+        insertadas   += lote.length - upd;
       }
 
-      await conn.commit();
       return { insertadas, actualizadas };
-    } catch (err) {
-      await conn.rollback();
-      throw err;
     } finally {
       conn.release();
     }
