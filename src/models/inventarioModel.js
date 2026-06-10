@@ -1,11 +1,31 @@
 const db = require('../config/db');
 
+// Convierte cualquier formato de fecha a YYYY-MM-DD
+function normalizarFecha(fecha) {
+  if (!fecha) return new Date().toISOString().split('T')[0];
+  const s = String(fecha).trim();
+  if (!s) return new Date().toISOString().split('T')[0];
+  // Ya está en YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // DD/MM/YYYY o D/M/YYYY (formato colombiano)
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+    const [d, m, y] = s.split('/');
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  // Intentar con Date nativo
+  try {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  } catch {}
+  return new Date().toISOString().split('T')[0];
+}
+
 class Inventario {
   static async findAll({ guia, estado } = {}) {
     let sql = 'SELECT * FROM inventario WHERE 1=1';
     const params = [];
-    if (guia)   { sql += ' AND guia LIKE ?';    params.push(`%${guia}%`); }
-    if (estado) { sql += ' AND estado = ?';      params.push(estado); }
+    if (guia)   { sql += ' AND guia LIKE ?';  params.push(`%${guia}%`); }
+    if (estado) { sql += ' AND estado = ?';    params.push(estado); }
     sql += ' ORDER BY creado_en DESC';
     const [rows] = await db.query(sql, params);
     return rows;
@@ -27,12 +47,11 @@ class Inventario {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'No entregado', ?)`,
       [guia, cliente||null, destinatario||null, direccion||null, telefono||null,
        parseFloat(valor)||0, ciudad||null, observaciones||null,
-       fecha || new Date().toISOString().split('T')[0]]
+       normalizarFecha(fecha)]
     );
     return result.insertId;
   }
 
-  // Importar múltiples guías desde Excel (upsert)
   static async importar(guias) {
     const conn = await db.getConnection();
     try {
@@ -41,7 +60,10 @@ class Inventario {
 
       for (const g of guias) {
         if (!g.guia) continue;
-        const [existe] = await conn.query('SELECT id FROM inventario WHERE guia = ?', [g.guia]);
+        const fechaDB = normalizarFecha(g.fecha);
+        const valor   = parseFloat(String(g.valor || '0').replace(/[^0-9.]/g, '')) || 0;
+
+        const [existe] = await conn.query('SELECT id FROM inventario WHERE guia = ?', [String(g.guia).trim()]);
 
         if (existe.length) {
           await conn.query(
@@ -53,20 +75,20 @@ class Inventario {
               valor         = COALESCE(?, valor),
               ciudad        = COALESCE(?, ciudad),
               observaciones = COALESCE(?, observaciones),
-              fecha         = COALESCE(?, fecha)
+              fecha         = ?
              WHERE guia = ?`,
             [g.cliente||null, g.destinatario||null, g.direccion||null,
-             g.telefono||null, g.valor ? parseFloat(g.valor) : null,
-             g.ciudad||null, g.observaciones||null, g.fecha||null, g.guia]
+             g.telefono||null, valor||null, g.ciudad||null,
+             g.observaciones||null, fechaDB, String(g.guia).trim()]
           );
           actualizadas++;
         } else {
           await conn.query(
             `INSERT INTO inventario (guia, cliente, destinatario, direccion, telefono, valor, ciudad, observaciones, estado, fecha)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'No entregado', ?)`,
-            [g.guia, g.cliente||null, g.destinatario||null, g.direccion||null,
-             g.telefono||null, parseFloat(g.valor)||0, g.ciudad||null,
-             g.observaciones||null, g.fecha || new Date().toISOString().split('T')[0]]
+            [String(g.guia).trim(), g.cliente||null, g.destinatario||null,
+             g.direccion||null, g.telefono||null, valor,
+             g.ciudad||null, g.observaciones||null, fechaDB]
           );
           insertadas++;
         }
