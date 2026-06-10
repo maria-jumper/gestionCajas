@@ -1,19 +1,22 @@
 const Envio = require('../models/enviosModel');
 
 exports.crearNuevoEnvio = async (data, usuario_id) => {
-    // Aquí puedes poner validaciones de negocio. 
-    // Por ejemplo: ¿El precio es mayor a cero?
-    if (data.precio <= 0) {
-        throw new Error('El precio del envío debe ser mayor a cero.');
-    }
+  if (!data.guia) throw new Error('El número de guía es obligatorio.');
 
-    // Llamamos al modelo que tiene la transacción
-    const envioId = await Envio.createWithTransaction({
-        guia: data.guia,
-        precio: data.precio,
-        destino: data.destino,
-        usuario_id: usuario_id
-    });
+  const valor = parseFloat(data.precio || data.valor || 0);
 
-    return envioId;
+  return await Envio.createWithTransaction({
+    guia:        data.guia,
+    valor,
+    destinatario: data.destinatario || data.destino || null,
+    cliente:      data.cliente      || null,
+    metodo_pago:  data.metodo_pago  || 'EFECTIVO',
+    referencia:   data.referencia   || null,
+    cantidad:     data.cantidad     || 1,
+    usuario_id,
+  });
+};
+
+exports.obtenerEnvios = async (filtros = {}) => {
+  return await Envio.findAll(filtros);
 };

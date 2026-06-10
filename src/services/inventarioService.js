@@ -1,32 +1,32 @@
 const Inventario = require('../models/inventarioModel');
 
-exports.obtenerTodoElInventario = async () => {
-    return await Inventario.findAll();
+exports.obtenerTodoElInventario = async (filtros = {}) => {
+  return await Inventario.findAll(filtros);
 };
 
-exports.registrarProducto = async (data) => {
-    if (!data.nombre_producto || data.nombre_producto.trim() === '') {
-        throw new Error('El nombre del producto es obligatorio.');
-    }
-
-    if (data.stock < 0) {
-        throw new Error('El stock inicial no puede ser negativo.');
-    }
-
-    const productoId = await Inventario.create(data.nombre_producto, data.stock);
-    return productoId;
+exports.buscarPorGuia = async (codigo) => {
+  const guia = await Inventario.findByGuia(codigo);
+  if (!guia) throw new Error('Guía no encontrada en el inventario.');
+  return guia;
 };
 
-exports.modificarStock = async (id, nuevoStock) => {
-    if (nuevoStock < 0) {
-        throw new Error('El stock no puede ser un valor negativo.');
-    }
+exports.crearGuia = async (data) => {
+  if (!data.guia) throw new Error('El número de guía es obligatorio.');
+  return await Inventario.create(data);
+};
 
-    const filasAfectadas = await Inventario.updateStock(id, nuevoStock);
-    
-    if (filasAfectadas === 0) {
-        throw new Error('Producto no encontrado.');
-    }
+exports.importarGuias = async (guias) => {
+  if (!Array.isArray(guias) || !guias.length)
+    throw new Error('Se esperaba un array de guías.');
+  return await Inventario.importar(guias);
+};
 
-    return true;
+exports.actualizarGuia = async (id, campos) => {
+  const afectados = await Inventario.update(id, campos);
+  if (afectados === 0) throw new Error('Guía no encontrada.');
+  return true;
+};
+
+exports.eliminarGuia = async (id) => {
+  await Inventario.delete(id);
 };

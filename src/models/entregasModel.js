@@ -1,48 +1,66 @@
 const db = require('../config/db');
 
 class Entrega {
-    static async createWithTransaction({ guia, precio, metodo_pago, productos, usuario_id }) {
-        const connection = await db.getConnection();
-        try {
-            await connection.beginTransaction();
+  static async findAll({ fecha, usuario_id } = {}) {
+    let sql = `SELECT e.*, u.nombre AS nombre_secretaria
+               FROM entregas e LEFT JOIN usuarios u ON e.usuario_id = u.id WHERE 1=1`;
+    const params = [];
+    if (fecha)      { sql += ' AND DATE(e.fecha) = ?'; params.push(fecha); }
+    if (usuario_id) { sql += ' AND e.usuario_id = ?';  params.push(usuario_id); }
+    sql += ' ORDER BY e.fecha DESC';
+    const [rows] = await db.query(sql, params);
+    return rows;
+  }
 
-            // 1. Crear el registro de la entrega
-            const [entregaResult] = await connection.query(
-                "INSERT INTO entregas (guia, precio, metodo_pago, usuario_id, estado) VALUES (?, ?, ?, ?, 'entregado')",
-                [guia, precio, metodo_pago, usuario_id]
-            );
-            const entregaId = entregaResult.insertId;
+  // Registrar entrega y actualizar inventario en una transacción
+  static async createWithTransaction({ guia, valor, metodo_pago, referencia, id_inventario, cliente, usuario_id }) {
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
 
-            // 2. Insertar detalles y descontar stock
-            for (const p of productos) {
-                // Registrar detalle
-                await connection.query(
-                    "INSERT INTO detalle_entregas (entrega_id, inventario_id, cantidad) VALUES (?, ?, ?)",
-                    [entregaId, p.inventario_id, p.cantidad]
-                );
+      // Normalizar método de pago
+      const metodoDB = metodo_pago === 'efectivo'   ? 'EFECTIVO'
+                     : metodo_pago === 'transaccion' ? 'TRANSFERENCIA'
+                     : (metodo_pago || 'EFECTIVO').toUpperCase();
 
-                // Descontar del inventario
-                await connection.query(
-                    "UPDATE inventario SET stock = stock - ? WHERE id = ?",
-                    [p.cantidad, p.inventario_id]
-                );
-            }
+      // 1. Insertar entrega
+      const [result] = await conn.query(
+        `INSERT INTO entregas (guia, valor, estado, metodo_pago, referencia, id_inventario, cliente, usuario_id, fecha)
+         VALUES (?, ?, 'entregado', ?, ?, ?, ?, ?, NOW())`,
+        [guia, parseFloat(valor)||0, metodoDB, referencia||null,
+         id_inventario||null, cliente||null, usuario_id]
+      );
+      const entregaId = result.insertId;
 
-            // 3. Registrar el ingreso de dinero en caja
-            await connection.query(
-                "INSERT INTO movimientos (tipo, referencia_id, valor, metodo_pago, usuario_id) VALUES ('ENTREGA', ?, ?, ?, ?)",
-                [entregaId, precio, metodo_pago, usuario_id]
-            );
+      // 2. Actualizar estado en inventario
+      if (id_inventario) {
+        await conn.query(
+          `UPDATE inventario SET estado = 'Entregado', metodo_pago = ? WHERE id = ?`,
+          [metodoDB, id_inventario]
+        );
+      } else {
+        await conn.query(
+          `UPDATE inventario SET estado = 'Entregado', metodo_pago = ? WHERE guia = ?`,
+          [metodoDB, guia]
+        );
+      }
 
-            await connection.commit();
-            return entregaId;
-        } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
-        }
+      // 3. Registrar movimiento en caja
+      await conn.query(
+        `INSERT INTO movimientos (tipo, referencia_id, valor, metodo_pago, usuario_id)
+         VALUES ('ENTREGA', ?, ?, ?, ?)`,
+        [entregaId, parseFloat(valor)||0, metodoDB, usuario_id]
+      );
+
+      await conn.commit();
+      return entregaId;
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
     }
+  }
 }
 
 module.exports = Entrega;

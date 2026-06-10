@@ -1,27 +1,20 @@
 const Entrega = require('../models/entregasModel');
-const Inventario = require('../models/inventarioModel'); // Opcional, si quieres validar stock aquí
 
 exports.registrarEntregaCaja = async (data, usuario_id) => {
-    // 1. Validaciones de negocio
-    if (!data.productos || data.productos.length === 0) {
-        throw new Error('No se pueden registrar entregas sin productos.');
-    }
+  if (!data.guia)        throw new Error('El número de guía es obligatorio.');
+  if (!data.metodo_pago) throw new Error('El método de pago es obligatorio.');
 
-    if (!['EFECTIVO', 'TRANSFERENCIA'].includes(data.metodo_pago)) {
-        throw new Error('Método de pago no válido.');
-    }
+  return await Entrega.createWithTransaction({
+    guia:          data.guia,
+    valor:         data.precio || data.valor || 0,
+    metodo_pago:   data.metodo_pago,
+    referencia:    data.referencia    || null,
+    id_inventario: data.id_inventario || null,
+    cliente:       data.cliente       || null,
+    usuario_id,
+  });
+};
 
-    // Opcional: Podrías consultar el modelo de inventario para ver si hay stock suficiente ANTES de intentar vender.
-    // ...
-
-    // 2. Ejecutar la transacción en el modelo
-    const entregaId = await Entrega.createWithTransaction({
-        guia: data.guia,
-        precio: data.precio,
-        metodo_pago: data.metodo_pago,
-        productos: data.productos,
-        usuario_id: usuario_id
-    });
-
-    return entregaId;
+exports.obtenerEntregas = async (filtros = {}) => {
+  return await Entrega.findAll(filtros);
 };
